@@ -17,6 +17,13 @@ const state = {
 };
 
 const app = document.getElementById('app');
+const RESET_CARD_DURATION = 2000;
+const SCORE_STEP = 5;
+
+let gameMounted = false;
+let lastBarrelMode = null;
+let resetCardTimeout = null;
+let resetCardEl = null;
 
 function getNextHundred(score) {
   if (score >= BARREL_SCORE) return 0;
@@ -97,8 +104,9 @@ function render() {
 }
 
 function renderHomeScreen() {
+  gameMounted = false;
   app.innerHTML = `
-    <div class="screen">
+    <div class="screen screen-enter">
       <h1 class="screen-title">Кости</h1>
       <p class="screen-subtitle">Счёт для игр с костями</p>
       <div class="game-list">
@@ -141,8 +149,9 @@ function renderSetupScreen(gameName) {
   const title = gameName === 'tysyacha' ? 'Тысяча' : 'Настройка';
   const playerCount = state.players.length;
 
+  gameMounted = false;
   app.innerHTML = `
-    <div class="screen">
+    <div class="screen screen-enter">
       <h1 class="screen-title">${title}</h1>
       <p class="screen-subtitle">Настройка игроков</p>
 
@@ -209,6 +218,7 @@ function syncPlayerNamesFromInputs() {
 }
 
 function startGame() {
+  gameMounted = false;
   state.players.forEach((p) => {
     p.score = 0;
     p.resets = 0;
@@ -223,12 +233,11 @@ function startGame() {
 }
 
 function checkHundredReset(player) {
-  if (!ROUND_HUNDREDS.includes(player.score)) return false;
+  if (!ROUND_HUNDREDS.includes(player.score)) return null;
 
   player.resets += 1;
   const isThirdReset = player.resets % 3 === 0;
   const newScore = isThirdReset ? 0 : 100;
-  const oldScore = player.score;
   player.score = newScore;
 
   addHistoryEntry(
@@ -236,7 +245,68 @@ function checkHundredReset(player) {
     'reset'
   );
 
-  return true;
+  showResetCard(player.name, player.resets, newScore);
+
+  return { resetNumber: player.resets, newScore };
+}
+
+function showResetCard(playerName, resetNumber, newScore) {
+  if (!resetCardEl) {
+    resetCardEl = document.createElement('div');
+    resetCardEl.className = 'reset-overlay';
+    resetCardEl.innerHTML = '<div class="reset-card" id="reset-card-content"></div>';
+    document.body.appendChild(resetCardEl);
+  }
+
+  const content = document.getElementById('reset-card-content');
+  content.innerHTML = `
+    <div class="reset-card-icon">⚠️</div>
+    <div class="reset-card-title">Сброс!</div>
+    <div class="reset-card-player">${escapeHtml(playerName)}</div>
+    <div class="reset-card-detail">${resetNumber}-й сброс на сотне</div>
+    <div class="reset-card-score">→ ${newScore} очков</div>
+  `;
+
+  clearTimeout(resetCardTimeout);
+  resetCardEl.classList.add('visible');
+
+  resetCardTimeout = setTimeout(() => {
+    resetCardEl.classList.remove('visible');
+  }, RESET_CARD_DURATION);
+}
+
+function validateScore(points) {
+  const trimmed = String(points).trim();
+  if (trimmed === '') {
+    return { valid: false, error: 'Введите количество очков' };
+  }
+  const parsed = parseInt(trimmed, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    return { valid: false, error: 'Введите положительное число' };
+  }
+  if (parsed % SCORE_STEP !== 0) {
+    return { valid: false, error: 'Очки должны быть кратны 5' };
+  }
+  return { valid: true, points: parsed };
+}
+
+function showScoreError(message) {
+  const errorEl = document.getElementById('score-error');
+  const input = document.getElementById('score-input');
+  if (!errorEl) return;
+  errorEl.textContent = message;
+  errorEl.classList.remove('hidden');
+  if (input) input.classList.add('invalid');
+}
+
+function clearScoreError() {
+  const errorEl = document.getElementById('score-error');
+  const input = document.getElementById('score-input');
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.classList.add('hidden');
+  }
+  if (input) input.classList.remove('invalid');
 }
 
 function checkBarrel(player, wasOnBarrel) {
@@ -246,13 +316,16 @@ function checkBarrel(player, wasOnBarrel) {
 }
 
 function addScore(points) {
+  const validation = validateScore(points);
+  if (!validation.valid) {
+    showScoreError(validation.error);
+    return false;
+  }
+
+  clearScoreError();
   const player = getCurrentPlayer();
-  const parsed = parseInt(points, 10);
-
-  if (isNaN(parsed) || parsed < 0) return;
-
+  const parsed = validation.points;
   const wasOnBarrel = isOnBarrel(player);
-  const oldScore = player.score;
   player.score += parsed;
 
   addHistoryEntry(`${player.name} +${parsed} → ${player.score}`);
@@ -260,9 +333,11 @@ function addScore(points) {
   checkHundredReset(player);
   checkBarrel(player, wasOnBarrel);
 
+  const prevIndex = state.currentPlayerIndex;
   nextPlayer();
   saveState();
-  renderGameScreen();
+  updateGameScreen({ bumpPlayerIndex: prevIndex, newHistory: true });
+  return true;
 }
 
 function skipTurn() {
@@ -270,7 +345,7 @@ function skipTurn() {
   addHistoryEntry(`${player.name} ничего`);
   nextPlayer();
   saveState();
-  renderGameScreen();
+  updateGameScreen({ newHistory: true });
 }
 
 function winGame() {
@@ -284,6 +359,7 @@ function winGame() {
 }
 
 function resetGame() {
+  gameMounted = false;
   state.screen = 'setup';
   state.gameStatus = 'setup';
   state.currentPlayerIndex = 0;
@@ -298,6 +374,7 @@ function resetGame() {
 }
 
 function goToHome() {
+  gameMounted = false;
   state.screen = 'home';
   state.selectedGame = null;
   state.gameStatus = 'setup';
@@ -306,75 +383,121 @@ function goToHome() {
   renderHomeScreen();
 }
 
-function renderGameScreen() {
+function playerCardHtml(p, i) {
+  const active = i === state.currentPlayerIndex;
+  const barrel = isOnBarrel(p);
+  return `
+    <div class="player-card ${active ? 'active' : ''} ${barrel ? 'barrel' : ''}" data-player-index="${i}">
+      <div class="player-card-header">
+        <span class="player-name">
+          ${escapeHtml(p.name)}${barrel ? '<span class="player-badge">Бочка</span>' : ''}
+        </span>
+        <span class="player-score">${p.score}</span>
+      </div>
+      <div class="player-stats">
+        <span class="player-stat">Сотня: <span class="player-stat-value">${getNextHundred(p.score)}</span></span>
+        <span class="player-stat">Бочка: <span class="player-stat-value">${getToBarrel(p.score)}</span></span>
+        <span class="player-stat">Сброс: <span class="player-stat-value">${p.resets}</span></span>
+      </div>
+    </div>
+  `;
+}
+
+function turnActionsHtml(onBarrel) {
+  return `
+    <div class="turn-actions-title">
+      ${onBarrel ? 'Игрок на бочке' : 'Очки за ход'}
+    </div>
+    ${onBarrel ? `
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btn-win">Выигрыш</button>
+        <button class="btn btn-secondary" id="btn-skip">Ничего</button>
+      </div>
+    ` : `
+      <input
+        class="score-input"
+        id="score-input"
+        type="tel"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        autocomplete="off"
+        enterkeyhint="done"
+        placeholder="0"
+        value=""
+      >
+      <p class="score-error hidden" id="score-error" role="alert"></p>
+      <div class="btn-row" style="margin-top: 10px;">
+        <button class="btn btn-primary" id="btn-add-score">Добавить очки</button>
+        <button class="btn btn-secondary" id="btn-skip">Ничего</button>
+      </div>
+    `}
+  `;
+}
+
+function bindTurnActionHandlers(onBarrel) {
+  if (onBarrel) {
+    document.getElementById('btn-win').addEventListener('click', winGame);
+    document.getElementById('btn-skip').addEventListener('click', skipTurn);
+  } else {
+    const input = document.getElementById('score-input');
+
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g, '');
+      clearScoreError();
+    });
+
+    document.getElementById('btn-add-score').addEventListener('click', () => {
+      if (addScore(input.value)) input.value = '';
+    });
+    document.getElementById('btn-skip').addEventListener('click', () => {
+      clearScoreError();
+      skipTurn();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        if (addScore(input.value)) input.value = '';
+      }
+    });
+  }
+}
+
+function bindGameActionHandlers() {
+  document.getElementById('btn-new-game').addEventListener('click', () => {
+    if (confirm('Начать новую игру? Текущий прогресс будет сброшен.')) {
+      resetGame();
+    }
+  });
+  document.getElementById('btn-home').addEventListener('click', goToHome);
+}
+
+function mountGameScreen() {
   const current = getCurrentPlayer();
   const onBarrel = isOnBarrel(current);
+  lastBarrelMode = onBarrel;
 
   app.innerHTML = `
-    <div class="screen">
+    <div class="screen game-screen screen-enter" id="game-screen">
       <div class="game-header">
         <h1 class="screen-title">Тысяча</h1>
       </div>
 
-      <div class="current-turn ${onBarrel ? 'barrel-mode' : ''}">
+      <div class="current-turn ${onBarrel ? 'barrel-mode' : ''}" id="current-turn">
         <div class="current-turn-label">Сейчас ходит</div>
-        <div class="current-turn-name">
-          ${escapeHtml(current.name)}
-          ${onBarrel ? '<span class="player-badge">Бочка</span>' : ''}
-        </div>
+        <div class="current-turn-name" id="current-turn-name"></div>
       </div>
 
-      <div class="players-list">
-        ${state.players.map((p, i) => {
-          const active = i === state.currentPlayerIndex;
-          const barrel = isOnBarrel(p);
-          return `
-            <div class="player-card ${active ? 'active' : ''} ${barrel ? 'barrel' : ''}">
-              <div class="player-card-header">
-                <span class="player-name">
-                  ${escapeHtml(p.name)}
-                  ${barrel ? '<span class="player-badge">Бочка</span>' : ''}
-                </span>
-                <span class="player-score">${p.score}</span>
-              </div>
-              <div class="player-stats">
-                <span>До сотни: <span class="player-stat-value">${getNextHundred(p.score)}</span></span>
-                <span>До бочки: <span class="player-stat-value">${getToBarrel(p.score)}</span></span>
-                <span>Сбросов: <span class="player-stat-value">${p.resets}</span></span>
-              </div>
-            </div>
-          `;
-        }).join('')}
+      <div class="players-list" id="players-list">
+        ${state.players.map(playerCardHtml).join('')}
       </div>
 
-      <div class="turn-actions">
-        <div class="turn-actions-title">
-          ${onBarrel ? 'Игрок на бочке' : 'Очки за ход'}
-        </div>
-        ${onBarrel ? `
-          <div class="btn-group">
-            <button class="btn btn-primary" id="btn-win">Выигрыш</button>
-            <button class="btn btn-secondary" id="btn-skip">Ничего</button>
-          </div>
-        ` : `
-          <input class="score-input" id="score-input" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="0" value="">
-          <div class="btn-row" style="margin-top: 12px;">
-            <button class="btn btn-primary" id="btn-add-score">Добавить очки</button>
-            <button class="btn btn-secondary" id="btn-skip">Ничего</button>
-          </div>
-        `}
+      <div class="turn-actions" id="turn-actions">
+        ${turnActionsHtml(onBarrel)}
       </div>
 
-      ${state.history.length > 0 ? `
-        <div class="history">
-          <div class="history-title">История ходов</div>
-          <ul class="history-list">
-            ${state.history.map((h) => `
-              <li class="history-item ${h.type}">${escapeHtml(h.text)}</li>
-            `).join('')}
-          </ul>
-        </div>
-      ` : ''}
+      <div class="history ${state.history.length === 0 ? 'hidden' : ''}" id="history-block">
+        <div class="history-title">История</div>
+        <ul class="history-list" id="history-list"></ul>
+      </div>
 
       <div class="game-actions">
         <button class="btn btn-danger" id="btn-new-game">Новая игра</button>
@@ -383,32 +506,108 @@ function renderGameScreen() {
     </div>
   `;
 
-  if (onBarrel) {
-    document.getElementById('btn-win').addEventListener('click', winGame);
-    document.getElementById('btn-skip').addEventListener('click', skipTurn);
-  } else {
-    const input = document.getElementById('score-input');
-    document.getElementById('btn-add-score').addEventListener('click', () => {
-      addScore(input.value);
-    });
-    document.getElementById('btn-skip').addEventListener('click', skipTurn);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addScore(input.value);
-    });
+  updateCurrentTurnUI();
+  updateHistoryUI(false);
+  bindTurnActionHandlers(onBarrel);
+  bindGameActionHandlers();
+  gameMounted = true;
+}
+
+function updateCurrentTurnUI() {
+  const current = getCurrentPlayer();
+  const onBarrel = isOnBarrel(current);
+  const turnEl = document.getElementById('current-turn');
+  const nameEl = document.getElementById('current-turn-name');
+
+  turnEl.classList.toggle('barrel-mode', onBarrel);
+  nameEl.innerHTML = `
+    ${escapeHtml(current.name)}${onBarrel ? '<span class="player-badge">Бочка</span>' : ''}
+  `;
+}
+
+function updatePlayerCardUI(i, bumpScore) {
+  const card = document.querySelector(`[data-player-index="${i}"]`);
+  if (!card) return;
+
+  const p = state.players[i];
+  const active = i === state.currentPlayerIndex;
+  const barrel = isOnBarrel(p);
+
+  card.classList.toggle('active', active);
+  card.classList.toggle('barrel', barrel);
+
+  const nameEl = card.querySelector('.player-name');
+  nameEl.innerHTML = `
+    ${escapeHtml(p.name)}${barrel ? '<span class="player-badge">Бочка</span>' : ''}
+  `;
+
+  const scoreEl = card.querySelector('.player-score');
+  scoreEl.textContent = p.score;
+  if (bumpScore) {
+    scoreEl.classList.remove('bump');
+    void scoreEl.offsetWidth;
+    scoreEl.classList.add('bump');
   }
 
-  document.getElementById('btn-new-game').addEventListener('click', () => {
-    if (confirm('Начать новую игру? Текущий прогресс будет сброшен.')) {
-      resetGame();
-    }
-  });
+  const stats = card.querySelectorAll('.player-stat-value');
+  stats[0].textContent = getNextHundred(p.score);
+  stats[1].textContent = getToBarrel(p.score);
+  stats[2].textContent = p.resets;
+}
 
-  document.getElementById('btn-home').addEventListener('click', goToHome);
+function updateHistoryUI(animateNew) {
+  const block = document.getElementById('history-block');
+  const list = document.getElementById('history-list');
+  if (!block || !list) return;
+
+  if (state.history.length === 0) {
+    block.classList.add('hidden');
+    list.innerHTML = '';
+    return;
+  }
+
+  block.classList.remove('hidden');
+  list.innerHTML = state.history.map((h, i) => `
+    <li class="history-item ${h.type}${animateNew && i === 0 ? ' new-entry' : ''}">${escapeHtml(h.text)}</li>
+  `).join('');
+}
+
+function updateTurnActionsIfNeeded() {
+  const onBarrel = isOnBarrel(getCurrentPlayer());
+  if (onBarrel === lastBarrelMode) return;
+
+  lastBarrelMode = onBarrel;
+  const turnActions = document.getElementById('turn-actions');
+  turnActions.innerHTML = turnActionsHtml(onBarrel);
+  bindTurnActionHandlers(onBarrel);
+}
+
+function updateGameScreen({ bumpPlayerIndex, newHistory } = {}) {
+  if (!gameMounted || !document.getElementById('game-screen')) {
+    mountGameScreen();
+    return;
+  }
+
+  updateCurrentTurnUI();
+  state.players.forEach((_, i) => {
+    updatePlayerCardUI(i, bumpPlayerIndex === i);
+  });
+  updateTurnActionsIfNeeded();
+  updateHistoryUI(newHistory);
+}
+
+function renderGameScreen() {
+  if (gameMounted && document.getElementById('game-screen')) {
+    updateGameScreen();
+  } else {
+    mountGameScreen();
+  }
 }
 
 function renderVictoryScreen() {
+  gameMounted = false;
   app.innerHTML = `
-    <div class="screen victory-screen">
+    <div class="screen victory-screen screen-enter">
       <div class="victory-icon">🎉</div>
       <p class="victory-text">Победил(а) ${escapeHtml(state.winner)}</p>
       <div class="btn-group">
@@ -428,8 +627,9 @@ function renderVictoryScreen() {
 }
 
 function renderStubScreen() {
+  gameMounted = false;
   app.innerHTML = `
-    <div class="screen stub-screen">
+    <div class="screen stub-screen screen-enter">
       <h1 class="screen-title">Покер</h1>
       <p class="stub-text">Игра в разработке</p>
       <button class="btn btn-secondary" id="btn-back">Назад</button>
