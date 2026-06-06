@@ -670,6 +670,8 @@ function init() {
     }
     if (state.screen === 'stub') {
       state.screen = 'home';
+      state.selectedGame = null;
+      saveState();
       renderHomeScreen();
       return;
     }

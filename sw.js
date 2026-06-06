@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yatzy-v2';
+const CACHE_NAME = 'yatzy-v3';
 
 const ASSETS = [
   './',
@@ -9,6 +9,13 @@ const ASSETS = [
   './manifest.json',
   './icons/icon.svg',
 ];
+
+function isAppFile(url) {
+  return ASSETS.some((asset) => {
+    const path = asset === './' ? '/index.html' : asset.slice(1);
+    return url.pathname.endsWith(path) || (asset === './' && url.pathname.endsWith('/'));
+  });
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -23,17 +30,26 @@ self.addEventListener('activate', (event) => {
       Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       )
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
+  const url = new URL(event.request.url);
+  const isNavigation = event.request.mode === 'navigate';
+  const isScriptOrStyle = /\.(js|css|html)$/.test(url.pathname);
+
+  if (isNavigation || isScriptOrStyle || isAppFile(url)) {
+    event.respondWith(
+      fetch(event.request)
         .then((response) => {
           if (response && response.status === 200) {
             const copy = response.clone();
@@ -41,9 +57,16 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => null);
+        .catch(() =>
+          caches.match(event.request).then(
+            (cached) => cached || caches.match('./index.html')
+          )
+        )
+    );
+    return;
+  }
 
-      return cached || networkFetch.then((response) => response || caches.match('./index.html'));
-    })
+  event.respondWith(
+    caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
 });
