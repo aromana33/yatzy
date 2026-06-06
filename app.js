@@ -449,20 +449,8 @@ function playerCardHtml(p, i) {
   `;
 }
 
-function turnPlayerBannerHtml(onBarrel) {
-  const current = getCurrentPlayer();
-  return `
-    <div class="turn-player-banner ${onBarrel ? 'barrel-mode' : ''}" id="turn-player-banner">
-      <div class="turn-player-banner-label">${onBarrel ? 'На бочке' : 'Сейчас ходит'}</div>
-      <div class="turn-player-banner-name" id="turn-banner-name">${escapeHtml(current.name)}</div>
-      <div class="turn-player-banner-score" id="turn-banner-score">${current.score} очков</div>
-    </div>
-  `;
-}
-
 function turnActionsHtml(onBarrel) {
   return `
-    ${turnPlayerBannerHtml(onBarrel)}
     <div class="turn-actions-title">
       ${onBarrel ? 'Решение на бочке' : 'Очки за ход'}
     </div>
@@ -496,11 +484,13 @@ function setInputFocused(focused) {
   const gameScreen = document.getElementById('game-screen');
   const turnActions = document.getElementById('turn-actions');
   const stickyBar = document.getElementById('turn-sticky-bar');
+  const currentTurn = document.getElementById('current-turn');
   if (!gameScreen) return;
 
   gameScreen.classList.toggle('input-focused', focused);
   if (turnActions) turnActions.classList.toggle('focused', focused);
   if (stickyBar) stickyBar.classList.toggle('visible', focused);
+  if (currentTurn) currentTurn.classList.toggle('hidden', focused);
 }
 
 function bindTurnActionHandlers(onBarrel) {
@@ -625,16 +615,10 @@ function updateCurrentTurnUI() {
   const stickyBar = document.getElementById('turn-sticky-bar');
   const stickyName = document.getElementById('turn-sticky-name');
   const stickyScore = document.getElementById('turn-sticky-score');
-  const banner = document.getElementById('turn-player-banner');
-  const bannerName = document.getElementById('turn-banner-name');
-  const bannerScore = document.getElementById('turn-banner-score');
 
   if (stickyBar) stickyBar.classList.toggle('barrel-mode', onBarrel);
   if (stickyName) stickyName.textContent = current.name;
   if (stickyScore) stickyScore.textContent = `${current.score} очков`;
-  if (banner) banner.classList.toggle('barrel-mode', onBarrel);
-  if (bannerName) bannerName.textContent = current.name;
-  if (bannerScore) bannerScore.textContent = `${current.score} очков`;
 }
 
 function updatePlayerCardUI(i, bumpScore) {

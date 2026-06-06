@@ -534,39 +534,6 @@ body {
   opacity: 0.95;
 }
 
-.turn-player-banner {
-  background: var(--color-active);
-  color: #fff;
-  border-radius: var(--radius-sm);
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  text-align: center;
-}
-
-.turn-player-banner.barrel-mode {
-  background: var(--color-barrel);
-}
-
-.turn-player-banner-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.85;
-  margin-bottom: 2px;
-}
-
-.turn-player-banner-name {
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.turn-player-banner-score {
-  font-size: 14px;
-  opacity: 0.9;
-  margin-top: 2px;
-}
-
 .turn-actions {
   background: var(--color-surface);
   border-radius: var(--radius-sm);
