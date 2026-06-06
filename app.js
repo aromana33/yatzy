@@ -449,10 +449,22 @@ function playerCardHtml(p, i) {
   `;
 }
 
+function turnPlayerBannerHtml(onBarrel) {
+  const current = getCurrentPlayer();
+  return `
+    <div class="turn-player-banner ${onBarrel ? 'barrel-mode' : ''}" id="turn-player-banner">
+      <div class="turn-player-banner-label">${onBarrel ? 'На бочке' : 'Сейчас ходит'}</div>
+      <div class="turn-player-banner-name" id="turn-banner-name">${escapeHtml(current.name)}</div>
+      <div class="turn-player-banner-score" id="turn-banner-score">${current.score} очков</div>
+    </div>
+  `;
+}
+
 function turnActionsHtml(onBarrel) {
   return `
+    ${turnPlayerBannerHtml(onBarrel)}
     <div class="turn-actions-title">
-      ${onBarrel ? 'Игрок на бочке' : 'Очки за ход'}
+      ${onBarrel ? 'Решение на бочке' : 'Очки за ход'}
     </div>
     ${onBarrel ? `
       <div class="btn-group">
@@ -480,6 +492,17 @@ function turnActionsHtml(onBarrel) {
   `;
 }
 
+function setInputFocused(focused) {
+  const gameScreen = document.getElementById('game-screen');
+  const turnActions = document.getElementById('turn-actions');
+  const stickyBar = document.getElementById('turn-sticky-bar');
+  if (!gameScreen) return;
+
+  gameScreen.classList.toggle('input-focused', focused);
+  if (turnActions) turnActions.classList.toggle('focused', focused);
+  if (stickyBar) stickyBar.classList.toggle('visible', focused);
+}
+
 function bindTurnActionHandlers(onBarrel) {
   if (onBarrel) {
     document.getElementById('btn-win').addEventListener('click', winGame);
@@ -490,6 +513,24 @@ function bindTurnActionHandlers(onBarrel) {
     input.addEventListener('input', () => {
       input.value = input.value.replace(/\D/g, '');
       clearScoreError();
+    });
+
+    input.addEventListener('focus', () => {
+      setInputFocused(true);
+      const activeCard = document.querySelector('.player-card.active');
+      if (activeCard) {
+        setTimeout(() => {
+          activeCard.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 300);
+      }
+    });
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (document.activeElement?.id !== 'score-input') {
+          setInputFocused(false);
+        }
+      }, 150);
     });
 
     document.getElementById('btn-add-score').addEventListener('click', () => {
@@ -536,6 +577,15 @@ function mountGameScreen() {
         ${state.players.map(playerCardHtml).join('')}
       </div>
 
+      <div class="turn-sticky-bar" id="turn-sticky-bar" aria-live="polite">
+        <span class="turn-sticky-dot"></span>
+        <div class="turn-sticky-text">
+          <span class="turn-sticky-label">Ходит</span>
+          <span class="turn-sticky-name" id="turn-sticky-name"></span>
+        </div>
+        <span class="turn-sticky-score" id="turn-sticky-score"></span>
+      </div>
+
       <div class="turn-actions" id="turn-actions">
         ${turnActionsHtml(onBarrel)}
       </div>
@@ -565,10 +615,26 @@ function updateCurrentTurnUI() {
   const turnEl = document.getElementById('current-turn');
   const nameEl = document.getElementById('current-turn-name');
 
-  turnEl.classList.toggle('barrel-mode', onBarrel);
-  nameEl.innerHTML = `
-    ${escapeHtml(current.name)}${onBarrel ? '<span class="player-badge">Бочка</span>' : ''}
-  `;
+  if (turnEl) turnEl.classList.toggle('barrel-mode', onBarrel);
+  if (nameEl) {
+    nameEl.innerHTML = `
+      ${escapeHtml(current.name)}${onBarrel ? '<span class="player-badge">Бочка</span>' : ''}
+    `;
+  }
+
+  const stickyBar = document.getElementById('turn-sticky-bar');
+  const stickyName = document.getElementById('turn-sticky-name');
+  const stickyScore = document.getElementById('turn-sticky-score');
+  const banner = document.getElementById('turn-player-banner');
+  const bannerName = document.getElementById('turn-banner-name');
+  const bannerScore = document.getElementById('turn-banner-score');
+
+  if (stickyBar) stickyBar.classList.toggle('barrel-mode', onBarrel);
+  if (stickyName) stickyName.textContent = current.name;
+  if (stickyScore) stickyScore.textContent = `${current.score} очков`;
+  if (banner) banner.classList.toggle('barrel-mode', onBarrel);
+  if (bannerName) bannerName.textContent = current.name;
+  if (bannerScore) bannerScore.textContent = `${current.score} очков`;
 }
 
 function updatePlayerCardUI(i, bumpScore) {
@@ -629,9 +695,11 @@ function updateTurnActionsIfNeeded() {
   if (onBarrel === lastBarrelMode) return;
 
   lastBarrelMode = onBarrel;
+  setInputFocused(false);
   const turnActions = document.getElementById('turn-actions');
   turnActions.innerHTML = turnActionsHtml(onBarrel);
   bindTurnActionHandlers(onBarrel);
+  updateCurrentTurnUI();
 }
 
 function updateGameScreen({ bumpPlayerIndex, newHistory } = {}) {
