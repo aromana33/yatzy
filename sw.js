@@ -1,9 +1,10 @@
-const CACHE_NAME = 'yatzy-v1';
+const CACHE_NAME = 'yatzy-v2';
 
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './poker.js',
   './app.js',
   './manifest.json',
   './icons/icon.svg',

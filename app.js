@@ -13,6 +13,8 @@ const state = {
   currentPlayerIndex: 0,
   gameStatus: 'setup',
   winner: null,
+  winners: null,
+  pokerResults: null,
   history: [],
 };
 
@@ -92,11 +94,14 @@ function render() {
     case 'game':
       renderGameScreen();
       break;
+    case 'poker-game':
+      renderPokerGameScreen();
+      break;
     case 'victory':
       renderVictoryScreen();
       break;
-    case 'stub':
-      renderStubScreen();
+    case 'poker-victory':
+      renderPokerWinnerScreen();
       break;
     default:
       renderHomeScreen();
@@ -105,6 +110,8 @@ function render() {
 
 function renderHomeScreen() {
   gameMounted = false;
+  pokerMounted = false;
+  pokerSelectedCell = null;
   app.innerHTML = `
     <div class="screen screen-enter">
       <h1 class="screen-title">Кости</h1>
@@ -118,35 +125,34 @@ function renderHomeScreen() {
 
   app.querySelectorAll('.game-card').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const game = btn.dataset.game;
-      if (game === 'poker') {
-        state.screen = 'stub';
-        state.selectedGame = 'poker';
-        saveState();
-        render();
-        return;
-      }
-      state.selectedGame = game;
+      state.selectedGame = btn.dataset.game;
       state.screen = 'setup';
-      if (state.players.length === 0) {
-        initDefaultPlayers();
-      }
+      initDefaultPlayers(state.selectedGame);
       saveState();
       render();
     });
   });
 }
 
-function initDefaultPlayers() {
-  state.players = DEFAULT_NAMES.map((name) => ({
-    name,
-    score: 0,
-    resets: 0,
-  }));
+function initDefaultPlayers(game) {
+  if (game === 'poker') {
+    state.players = DEFAULT_NAMES.map((name) => createPokerPlayer(name));
+  } else {
+    state.players = DEFAULT_NAMES.map((name) => ({
+      name,
+      score: 0,
+      resets: 0,
+    }));
+  }
+}
+
+function createPlayerForGame(game, name) {
+  if (game === 'poker') return createPokerPlayer(name);
+  return { name, score: 0, resets: 0 };
 }
 
 function renderSetupScreen(gameName) {
-  const title = gameName === 'tysyacha' ? 'Тысяча' : 'Настройка';
+  const title = gameName === 'tysyacha' ? 'Тысяча' : gameName === 'poker' ? 'Покер' : 'Настройка';
   const playerCount = state.players.length;
 
   gameMounted = false;
@@ -180,7 +186,7 @@ function renderSetupScreen(gameName) {
   document.getElementById('btn-add').addEventListener('click', () => {
     syncPlayerNamesFromInputs();
     if (state.players.length < MAX_PLAYERS) {
-      state.players.push({ name: `Игрок ${state.players.length + 1}`, score: 0, resets: 0 });
+      state.players.push(createPlayerForGame(gameName, `Игрок ${state.players.length + 1}`));
       saveState();
       renderSetupScreen(gameName);
     }
@@ -197,7 +203,8 @@ function renderSetupScreen(gameName) {
 
   document.getElementById('btn-start').addEventListener('click', () => {
     syncPlayerNamesFromInputs();
-    startGame();
+    if (gameName === 'poker') startPokerGame();
+    else startGame();
   });
 
   document.getElementById('btn-back').addEventListener('click', () => {
@@ -375,10 +382,14 @@ function resetGame() {
 
 function goToHome() {
   gameMounted = false;
+  pokerMounted = false;
+  pokerSelectedCell = null;
   state.screen = 'home';
   state.selectedGame = null;
   state.gameStatus = 'setup';
   state.winner = null;
+  state.winners = null;
+  state.pokerResults = null;
   saveState();
   renderHomeScreen();
 }
@@ -626,24 +637,6 @@ function renderVictoryScreen() {
   });
 }
 
-function renderStubScreen() {
-  gameMounted = false;
-  app.innerHTML = `
-    <div class="screen stub-screen screen-enter">
-      <h1 class="screen-title">Покер</h1>
-      <p class="stub-text">Игра в разработке</p>
-      <button class="btn btn-secondary" id="btn-back">Назад</button>
-    </div>
-  `;
-
-  document.getElementById('btn-back').addEventListener('click', () => {
-    state.screen = 'home';
-    state.selectedGame = null;
-    saveState();
-    render();
-  });
-}
-
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -654,21 +647,30 @@ function init() {
   const loaded = loadState();
 
   if (loaded) {
-    if (state.screen === 'game' && state.gameStatus === 'playing') {
+    if (state.screen === 'game' && state.gameStatus === 'playing' && state.selectedGame === 'tysyacha') {
       renderGameScreen();
+      return;
+    }
+    if (state.screen === 'poker-game' && state.gameStatus === 'playing' && state.selectedGame === 'poker') {
+      renderPokerGameScreen();
       return;
     }
     if (state.screen === 'victory' && state.gameStatus === 'finished') {
       renderVictoryScreen();
       return;
     }
+    if (state.screen === 'poker-victory' && state.gameStatus === 'finished') {
+      renderPokerWinnerScreen();
+      return;
+    }
     if (state.screen === 'setup') {
-      if (state.players.length === 0) initDefaultPlayers();
+      if (state.players.length === 0) initDefaultPlayers(state.selectedGame || 'tysyacha');
       renderSetupScreen(state.selectedGame);
       return;
     }
     if (state.screen === 'stub') {
-      renderStubScreen();
+      state.screen = 'home';
+      renderHomeScreen();
       return;
     }
   }
