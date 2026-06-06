@@ -24,6 +24,10 @@
   --font-size-xl: 26px;
   --spacing: 16px;
   --max-width: 420px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 *,
@@ -34,6 +38,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  height: 100%;
 }
 
 body {
@@ -43,15 +48,21 @@ body {
   line-height: 1.45;
   color: var(--color-text);
   background: var(--color-bg);
+  min-height: 100%;
   min-height: 100dvh;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overflow-x: hidden;
 }
 
 #app {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: var(--spacing);
+  padding:
+    calc(var(--safe-top) + 12px)
+    calc(var(--safe-right) + var(--spacing))
+    calc(var(--safe-bottom) + 16px)
+    calc(var(--safe-left) + var(--spacing));
   min-height: 100dvh;
+  box-sizing: border-box;
 }
 
 .screen {
@@ -515,6 +526,7 @@ body {
   flex-direction: column;
   gap: 6px;
   margin-top: 2px;
+  padding-bottom: 4px;
 }
 
 .game-actions .btn {
