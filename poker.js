@@ -110,26 +110,32 @@ function maybeLogSchoolResult(player) {
   }
 }
 
-function addPokerScore(playerIndex, rowId, section, value) {
+function addPokerScore(playerIndex, rowId, section, value, isEdit = false) {
   const player = state.players[playerIndex];
   const validation = parsePokerScore(value);
   if (!validation.valid) return { ok: false, error: validation.error };
 
-  const isEdit = getPokerCellValue(player, rowId, section) !== null;
+  const wasFilled = getPokerCellValue(player, rowId, section) !== null;
   setPokerCellValue(player, rowId, section, validation.points);
 
   const label = getPokerRowLabel(rowId, section);
-  addHistoryEntry(`${player.name}: ${label} = ${validation.points}`, section === 'school' ? 'school' : 'combo');
+  const suffix = isEdit || wasFilled ? ' (изм.)' : '';
+  addHistoryEntry(
+    `${player.name}: ${label} = ${validation.points}${suffix}`,
+    section === 'school' ? 'school' : 'combo'
+  );
 
   if (section === 'school') maybeLogSchoolResult(player);
 
-  if (!isEdit) player.turns += 1;
+  if (!isEdit && !wasFilled) {
+    player.turns += 1;
+    nextPlayer();
+  }
 
   pokerSelectedCell = null;
-  nextPlayer();
   saveState();
 
-  if (isPokerGameFinished()) {
+  if (!isEdit && !wasFilled && isPokerGameFinished()) {
     finishPokerGame();
     return { ok: true, finished: true };
   }
@@ -195,11 +201,20 @@ function resetPokerGame() {
   renderPokerSetupScreen();
 }
 
-function handlePokerCellClick(playerIndex, rowId, section) {
-  if (playerIndex !== state.currentPlayerIndex) return;
-
+function handlePokerCellClick(playerIndex, rowId, section, isComboEdit = false) {
   const player = state.players[playerIndex];
   const value = getPokerCellValue(player, rowId, section);
+
+  if (section === 'combo' && value !== null) {
+    const label = getPokerRowLabel(rowId, section);
+    if (!confirm(`Изменить «${label}» у ${player.name}?`)) return;
+    pokerSelectedCell = { playerIndex, rowId, section, currentValue: value, isEdit: true };
+    renderPokerGameScreen();
+    return;
+  }
+
+  if (playerIndex !== state.currentPlayerIndex) return;
+
   const available = getAvailablePokerRows(player);
   const isAvailable = available.some((r) => r.id === rowId && r.section === section);
 
@@ -208,9 +223,12 @@ function handlePokerCellClick(playerIndex, rowId, section) {
   if (value !== null) {
     const label = section === 'school' ? `школу ${rowId}` : getPokerRowLabel(rowId, section);
     if (!confirm(`Изменить значение в «${label}»?`)) return;
+    pokerSelectedCell = { playerIndex, rowId, section, currentValue: value, isEdit: true };
+    renderPokerGameScreen();
+    return;
   }
 
-  pokerSelectedCell = { playerIndex, rowId, section, currentValue: value };
+  pokerSelectedCell = { playerIndex, rowId, section, currentValue: value, isEdit: false };
   renderPokerGameScreen();
 }
 
@@ -234,6 +252,7 @@ function pokerCellClass(playerIndex, rowId, section) {
   if (value !== null) classes.push('filled');
   else classes.push('empty');
   if (canFill) classes.push('available');
+  if (section === 'combo' && value !== null) classes.push('editable');
   if (selected) classes.push('selected');
   if (value !== null && value < 0) classes.push('negative');
   return classes.join(' ');
@@ -286,8 +305,8 @@ function bindPokerInputSheet() {
   });
 
   const save = () => {
-    const { playerIndex, rowId, section } = pokerSelectedCell;
-    const result = addPokerScore(playerIndex, rowId, section, input.value);
+    const { playerIndex, rowId, section, isEdit } = pokerSelectedCell;
+    const result = addPokerScore(playerIndex, rowId, section, input.value, isEdit);
     if (!result.ok) {
       errorEl.textContent = result.error;
       errorEl.classList.remove('hidden');
@@ -423,8 +442,14 @@ function renderPokerGameScreen() {
     </div>
   `;
 
+  app.querySelectorAll('.poker-cell.editable').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      handlePokerCellClick(parseInt(cell.dataset.pi, 10), cell.dataset.row, 'combo', true);
+    });
+  });
+
   app.querySelectorAll(`[data-pi="${state.currentPlayerIndex}"].poker-cell`).forEach((cell) => {
-    if (cell.classList.contains('available') || cell.classList.contains('filled')) {
+    if (cell.classList.contains('available') || (cell.classList.contains('filled') && cell.dataset.section === 'school')) {
       cell.addEventListener('click', () => {
         handlePokerCellClick(state.currentPlayerIndex, cell.dataset.row, cell.dataset.section);
       });

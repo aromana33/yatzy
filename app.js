@@ -43,11 +43,40 @@ function isOnBarrel(player) {
   return player.score >= BARREL_SCORE;
 }
 
-function addHistoryEntry(text, type = '') {
-  state.history.unshift({ text, type });
+function createGameSnapshot() {
+  return {
+    players: state.players.map((p) => ({ score: p.score, resets: p.resets })),
+    currentPlayerIndex: state.currentPlayerIndex,
+  };
+}
+
+function restoreGameSnapshot(snapshot) {
+  snapshot.players.forEach((sp, i) => {
+    state.players[i].score = sp.score;
+    state.players[i].resets = sp.resets;
+  });
+  state.currentPlayerIndex = snapshot.currentPlayerIndex;
+}
+
+function addHistoryEntry(text, type = '', snapshot = null) {
+  state.history.unshift({ text, type, snapshot });
   if (state.history.length > MAX_HISTORY) {
     state.history = state.history.slice(0, MAX_HISTORY);
   }
+}
+
+function undoLastTysyachaMove() {
+  if (!state.history.length) return;
+
+  const entry = state.history[0];
+  if (!entry.snapshot) return;
+
+  if (!confirm('Отменить последний ход?')) return;
+
+  restoreGameSnapshot(entry.snapshot);
+  state.history.shift();
+  saveState();
+  updateGameScreen({ newHistory: false });
 }
 
 function getCurrentPlayer() {
@@ -239,9 +268,10 @@ function startGame() {
   render();
 }
 
-function checkHundredReset(player) {
+function checkHundredReset(player, snapshot) {
   if (!ROUND_HUNDREDS.includes(player.score)) return null;
 
+  const snap = snapshot || createGameSnapshot();
   player.resets += 1;
   const isThirdReset = player.resets % 3 === 0;
   const newScore = isThirdReset ? 0 : 100;
@@ -249,7 +279,8 @@ function checkHundredReset(player) {
 
   addHistoryEntry(
     `${player.name} сброс на сотне → ${newScore}`,
-    'reset'
+    'reset',
+    snap
   );
 
   showResetCard(player.name, player.resets, newScore);
@@ -318,7 +349,7 @@ function clearScoreError() {
 
 function checkBarrel(player, wasOnBarrel) {
   if (!wasOnBarrel && isOnBarrel(player)) {
-    addHistoryEntry(`${player.name} вышел на бочку`, 'barrel');
+    addHistoryEntry(`${player.name} вышел на бочку`, 'barrel', createGameSnapshot());
   }
 }
 
@@ -333,11 +364,14 @@ function addScore(points) {
   const player = getCurrentPlayer();
   const parsed = validation.points;
   const wasOnBarrel = isOnBarrel(player);
+  const snap = createGameSnapshot();
   player.score += parsed;
 
-  addHistoryEntry(`${player.name} +${parsed} → ${player.score}`);
+  addHistoryEntry(`${player.name} +${parsed} → ${player.score}`, 'score', snap);
 
-  checkHundredReset(player);
+  if (ROUND_HUNDREDS.includes(player.score)) {
+    checkHundredReset(player, createGameSnapshot());
+  }
   checkBarrel(player, wasOnBarrel);
 
   const prevIndex = state.currentPlayerIndex;
@@ -349,7 +383,8 @@ function addScore(points) {
 
 function skipTurn() {
   const player = getCurrentPlayer();
-  addHistoryEntry(`${player.name} ничего`);
+  const snap = createGameSnapshot();
+  addHistoryEntry(`${player.name} ничего`, 'skip', snap);
   nextPlayer();
   saveState();
   updateGameScreen({ newHistory: true });
@@ -579,8 +614,14 @@ function updateHistoryUI(animateNew) {
 
   block.classList.remove('hidden');
   list.innerHTML = state.history.map((h, i) => `
-    <li class="history-item ${h.type}${animateNew && i === 0 ? ' new-entry' : ''}">${escapeHtml(h.text)}</li>
+    <li class="history-item ${h.type}${animateNew && i === 0 ? ' new-entry' : ''}">
+      <span class="history-text">${escapeHtml(h.text)}</span>
+      ${i === 0 && h.snapshot ? '<button class="history-undo" type="button" aria-label="Отменить ход">×</button>' : ''}
+    </li>
   `).join('');
+
+  const undoBtn = list.querySelector('.history-undo');
+  if (undoBtn) undoBtn.addEventListener('click', undoLastTysyachaMove);
 }
 
 function updateTurnActionsIfNeeded() {

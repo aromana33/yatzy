@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yatzy-v3';
+const CACHE_NAME = 'yatzy-v4';
 
 const ASSETS = [
   './',

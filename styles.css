@@ -486,11 +486,40 @@ body {
 }
 
 .history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 13px;
   padding: 5px 8px;
   background: var(--color-bg);
   border-radius: 8px;
   color: var(--color-text);
+}
+
+.history-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-undo {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.history-undo:active {
+  background: #f9d5d1;
 }
 
 .history-item.new-entry {
@@ -796,6 +825,11 @@ body {
 
 .poker-cell.filled.current-player-col {
   cursor: pointer;
+}
+
+.poker-cell.editable {
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--color-active);
 }
 
 .poker-cell.selected {
